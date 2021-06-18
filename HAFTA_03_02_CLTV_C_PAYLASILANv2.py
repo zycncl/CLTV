@@ -70,11 +70,78 @@ cltv_c.groupby("segment")[["total_transaction", "total_unit", "total_price", "cl
 
 
 
+cltv_df = df.groupby('Customer ID').agg({'InvoiceDate': [lambda date: (date.max() - date.min()).days,
+                                                         lambda date: (today_date - date.min()).days],
+                                         'Invoice': lambda num: num.nunique(),
+                                         'TotalPrice': lambda TotalPrice: TotalPrice.sum()})
+
+cltv_df.columns = cltv_df.columns.droplevel(0)
+cltv_df.columns = ['recency', 'T', 'frequency', 'monetary']
+
+cltv_df["monetary"] = cltv_df["monetary"] / cltv_df["frequency"] #islem basina
+
+cltv_df = cltv_df[cltv_df["monetary"] > 0]
+
+# BGNBD
+cltv_df["recency"] = cltv_df["recency"] / 7 
+cltv_df["T"] = cltv_df["T"] / 7
+
+
+cltv_df = cltv_df[(cltv_df['frequency'] > 1)] 
+
+
+
+bgf = BetaGeoFitter(penalizer_coef=0.001)
+
+bgf.fit(cltv_df['frequency'],
+        cltv_df['recency'],
+        cltv_df['T'])
+
+
+
+bgf.conditional_expected_number_of_purchases_up_to_time(1,
+                                                        cltv_df['frequency'],
+                                                        cltv_df['recency'],
+                                                        cltv_df['T']).sort_values(ascending=False).head(10)
 
 
 
 
 
+bgf.predict(1,
+            cltv_df['frequency'],
+            cltv_df['recency'],
+            cltv_df['T']).sort_values(ascending=False).head(10)
 
+cltv_df["expected_purc_1_week"] = bgf.predict(1,
+                                              cltv_df['frequency'],
+                                              cltv_df['recency'],
+                                              cltv_df['T'])
+#gg
+gf = GammaGammaFitter(penalizer_coef=0.01)
+ggf.fit(cltv_df['frequency'], cltv_df['monetary'])
+
+ggf.conditional_expected_average_profit(cltv_df['frequency'],
+                                        cltv_df['monetary']).head(10)
+
+
+ggf.conditional_expected_average_profit(cltv_df['frequency'],
+                                        cltv_df['monetary']).sort_values(ascending=False).head(10)
+
+
+cltv = ggf.customer_lifetime_value(bgf,
+                                   cltv_df['frequency'],
+                                   cltv_df['recency'],
+                                   cltv_df['T'],
+                                   cltv_df['monetary'],
+                                   time=3,  # 3 aylık
+                                   freq="W",  # T'nin frekans bilgisi.
+                                   discount_rate=0.01)
+
+
+cltv_df["expected_average_profit"] = ggf.conditional_expected_average_profit(cltv_df['frequency'],
+                                                                             cltv_df['monetary'])
+
+cltv_df.sort_values("expected_average_profit", ascending=False).head(20)
 
 
